@@ -42,7 +42,7 @@ class SshDriver < VirtualMachineDriver
     # ------------------------------------------------------------------------ 
     # SshDriver constructor                                                
     # ------------------------------------------------------------------------ 
-    def initialize(hypervisor, threads, retries, localpoll)
+    def initialize(hypervisor, threads, retries, localpoll, localactions)
         super(threads,true,retries)
         
         @config = read_configuration
@@ -59,7 +59,8 @@ class SshDriver < VirtualMachineDriver
 
         @actions_path << "/remotes/vmm/#{hypervisor}"
 
-        @local_poll  = localpoll
+        @local_poll = localpoll
+        @local_actions = localactions
     end
 
     # ------------------------------------------------------------------------ #
@@ -106,13 +107,21 @@ class SshDriver < VirtualMachineDriver
     end
 
     def migrate(id, host, deploy_id, dest_host)
-        remotes_action("#{@remote_path}/migrate #{deploy_id} #{dest_host}",
-                       id, host, :migrate, @remote_dir)
+        if @local_actions.include?('migrate')
+            local_action("#{@actions_path}/migrate_local #{host} #{deploy_id} #{dest_host}",
+                         id, :migrate)
+        else
+            remotes_action("#{@remote_path}/migrate #{deploy_id} #{dest_host}",
+                           id, host, :migrate, @remote_dir)
+        end
     end
 
     def poll(id, host, deploy_id, not_used)
         if @local_poll != nil
             local_action("#{@actions_path}/#{@local_poll} #{host} #{deploy_id}",
+                         id, :poll)
+        elsif @local_actions.include?('poll')
+            local_action("#{@actions_path}/poll_local #{host} #{deploy_id}",
                          id, :poll)
         else
             remotes_action("#{@remote_path}/poll #{deploy_id}",
@@ -127,13 +136,15 @@ end
 opts = GetoptLong.new(
     [ '--retries',    '-r', GetoptLong::OPTIONAL_ARGUMENT ],
     [ '--threads',    '-t', GetoptLong::OPTIONAL_ARGUMENT ],
-    [ '--localpoll',  '-p', GetoptLong::REQUIRED_ARGUMENT ]
+    [ '--localpoll',  '-p', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--local',      '-L', GetoptLong::REQUIRED_ARGUMENT ]
 )
 
-hypervisor = ''
-retries    = 0
-threads    = 15
-localpoll  = nil
+hypervisor      = ''
+retries         = 0
+threads         = 15
+localpoll       = nil
+localactions    = []
 
 begin
     opts.each do |opt, arg|
@@ -144,6 +155,10 @@ begin
                 threads   = arg.to_i
             when '--localpoll'
                 localpoll = arg
+            when '--local'
+                arg.split(',').each do |action|
+                    localactions.push(action)
+                end
         end
     end
 rescue Exception => e
@@ -156,5 +171,6 @@ else
     exit(-1)
 end
 
-ssh_driver = SshDriver.new(hypervisor, threads, retries, localpoll)
+ssh_driver = SshDriver.new(hypervisor, threads, retries, localpoll, localactions)
 ssh_driver.start_driver
+
