@@ -65,19 +65,28 @@ private:
 int main(int argc, char **argv)
 {
     RankScheduler * ss;
-    int             port = 2633;
     time_t          timer= 30;
+    unsigned int    port = 2633;
     unsigned int    machines_limit = 300;
     unsigned int    dispatch_limit = 30;
     unsigned int    host_dispatch_limit = 1;
+    unsigned int    foreground = 0;
     char            opt;
+    char            *pidfile_name = NULL;
 
-    ostringstream  oss;
+    ofstream        pidfile;
+    ostringstream   oss;
 
-    while((opt = getopt(argc,argv,"p:t:m:d:h:")) != -1)
+    while((opt = getopt(argc,argv,"fP:p:t:m:d:h:")) != -1)
     {
         switch(opt)
         {
+            case 'f':
+                foreground = 1;
+                break;
+            case 'P':
+                pidfile_name = strdup(optarg);
+                break;
             case 'p':
                 port = atoi(optarg);
                 break;
@@ -94,12 +103,65 @@ int main(int argc, char **argv)
                 host_dispatch_limit = atoi(optarg);
                 break;
             default:
-                cerr << "usage: " << argv[0] << " [-p port] [-t timer] ";
+                cerr << "usage: " << argv[0] << " [ -f ] [ -P pidfile ] [-p port] [-t timer] ";
                 cerr << "[-m machines limit] [-d dispatch limit] [-h host_dispatch_limit]\n";
                 exit(-1);
                 break;
         }
     };
+
+    /* ---------------------------------------------------------------------- */
+
+    if (! foreground) {
+        pid_t pid, sid;
+
+        /* Fork off the parent process */
+        pid = fork();
+        if (pid < 0) {
+            cerr << "fork() failed.\n";
+            exit(1);
+        }
+        /* If we got a good PID, then
+           we can exit the parent process. */
+        if (pid > 0) {
+            exit(0);
+        }
+
+        if (pidfile_name) {
+            pid = getpid();
+            pidfile.open(pidfile_name);
+
+            if (! pidfile.is_open()) {
+                cerr << "failed to write pid file.\n";
+                exit(1);
+            }
+            pidfile << pid << "\n";
+            pidfile.close();
+        }
+ 
+        /* Change the file mode mask */
+        umask(0);
+ 
+        /* Create a new SID for the child process */
+        sid = setsid();
+        if (sid < 0) {
+            /* Log the failure */
+            cerr << "setsid() failed.\n";
+            exit(1);
+        }
+ 
+        /* Change the current working directory */
+        if ((chdir("/")) < 0) {
+            /* Log the failure */
+            cerr << "chdir() failed.\n";
+            exit(1);
+        }
+ 
+        /* Close out the standard file descriptors */
+        close(0);
+        close(1);
+        close(2);
+    }
 
     /* ---------------------------------------------------------------------- */
 

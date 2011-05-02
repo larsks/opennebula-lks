@@ -146,7 +146,7 @@ start()
         #  [-h host dispatch]  max number of VMs dispatched to a given host in each
         #                      scheduling action - default: 1
 
-    $ONE_SCHEDULER -p $PORT -t 30 -m 300 -d 30 -h 1&
+    $ONE_SCHEDULER -f -p $PORT -t 30 -m 300 -d 30 -h 1&
 
     LASTRC=$?
     LASTPID=$!
